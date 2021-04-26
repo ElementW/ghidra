@@ -82,6 +82,7 @@ public class ElfSectionHeader implements StructConverter, Writeable, MemoryLoada
 
 	private FactoryBundledWithBinaryReader reader;
 
+	private int index = -1;
 	private ElfHeader header;
 	private String name;
 	private byte[] data;
@@ -89,10 +90,10 @@ public class ElfSectionHeader implements StructConverter, Writeable, MemoryLoada
 	private boolean bytesChanged = false;
 
 	static ElfSectionHeader createElfSectionHeader(FactoryBundledWithBinaryReader reader,
-			ElfHeader header) throws IOException {
+			ElfHeader header, int index) throws IOException {
 		ElfSectionHeader elfSectionHeader =
 			(ElfSectionHeader) reader.getFactory().create(ElfSectionHeader.class);
-		elfSectionHeader.initElfSectionHeader(reader, header);
+		elfSectionHeader.initElfSectionHeader(reader, header, index);
 		return elfSectionHeader;
 	}
 
@@ -102,10 +103,11 @@ public class ElfSectionHeader implements StructConverter, Writeable, MemoryLoada
 	public ElfSectionHeader() {
 	}
 
-	private void initElfSectionHeader(FactoryBundledWithBinaryReader reader, ElfHeader header)
+	private void initElfSectionHeader(FactoryBundledWithBinaryReader reader, ElfHeader header, int index)
 			throws IOException {
 		this.reader = reader;
 		this.header = header;
+		this.index = index;
 
 		sh_name = reader.readNextInt();
 		sh_type = reader.readNextInt();
@@ -227,6 +229,14 @@ public class ElfSectionHeader implements StructConverter, Writeable, MemoryLoada
 			raf.write(dc.getBytes(sh_addralign));
 			raf.write(dc.getBytes(sh_entsize));
 		}
+	}
+
+	/**
+	 * Get the index of this section header within the corresponding section header table.
+	 * @return index of this section header within the corresponding section header table
+	 */
+	public int getIndex() {
+		return index;
 	}
 
 	/**

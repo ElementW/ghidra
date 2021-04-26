@@ -902,7 +902,7 @@ public class ElfHeader implements StructConverter, Writeable {
 		for (int i = 0; i < e_shnum; ++i) {
 			long index = e_shoff + (i * e_shentsize);
 			reader.setPointerIndex(index);
-			sectionHeaders[i] = ElfSectionHeader.createElfSectionHeader(reader, this);
+			sectionHeaders[i] = ElfSectionHeader.createElfSectionHeader(reader, this, i);
 		}
 
 		//note: we cannot retrieve all the names

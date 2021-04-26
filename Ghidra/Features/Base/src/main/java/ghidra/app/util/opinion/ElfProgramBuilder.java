@@ -3039,8 +3039,8 @@ class ElfProgramBuilder extends MemorySectionResolver implements ElfLoadHelper {
 			// be assigned first.
 			AddressSpace space = getSectionAddressSpace(elfSectionToLoad);
 			long relocOffset = relocatableImageBaseProvider.getNextRelocatableOffset(space);
-			addr = NumericUtilities.getUnsignedAlignedValue(relocOffset,
-				elfSectionToLoad.getAddressAlignment());
+			long relocAlignment = computeSectionAlignment(elfSectionToLoad, elfSectionToLoad.getAddressAlignment());
+			addr = NumericUtilities.getUnsignedAlignedValue(relocOffset, relocAlignment);
 			elfSectionToLoad.setAddress(addr);
 			nextRelocOffset = addr + (sectionByteLength / space.getAddressableUnitSize());
 		}
@@ -3120,6 +3120,60 @@ class ElfProgramBuilder extends MemorySectionResolver implements ElfLoadHelper {
 		if (nextRelocOffset != null) {
 			relocatableImageBaseProvider.setNextRelocatableOffset(space, nextRelocOffset);
 		}
+	}
+
+	private long computeSectionAlignment(ElfSectionHeader elfSectionToLoad, long relocAlignment) {
+		// Some versions of the RISC-V GCC toolchain generate object-file sections that aren't
+		// aligned to 20 bits yet also emits HI20-type relocations targeting symbols in these
+		// sections, making relocs impossible. Fixup section alignment if necessary.
+		if (elf.e_machine() == ElfConstants.EM_RISCV && relocAlignment < (1 << 20)) {
+			// Find if this is a single-symbol section (possibly with alias labels)
+			int uniqueSymbolsInThisSection = 0;
+			List<ElfSymbol> symbols = new ArrayList<>();
+			for (ElfSymbolTable symbolTable : elf.getSymbolTables()) {
+				for (ElfSymbol symbol : symbolTable.getSymbols()) {
+					if (symbol.getSectionHeaderIndex() == elfSectionToLoad.getIndex()) {
+						if (symbol.isObject() || symbol.isFunction()) {
+							uniqueSymbolsInThisSection++;
+							symbols.add(symbol);
+						} else if (symbol.isNoType()) {
+							symbols.add(symbol);
+						}
+					}
+				}
+			}
+
+			// If yes, check if any HI20 relocation target this symbol
+			if (uniqueSymbolsInThisSection != 1) {
+				return relocAlignment;
+			}
+			IntSet symbolIndices = new IntSet(symbols.size());
+			symbols.forEach(s -> symbolIndices.add(s.getSymbolTableIndex()));
+			for (ElfRelocationTable relocationTable : elf.getRelocationTables()) {
+				for (ElfRelocation relocation : relocationTable.getRelocations()) {
+					if (!symbolIndices.contains(relocation.getSymbolIndex())) {
+						continue;
+					}
+					switch (relocation.getType()) {
+						case 20: // R_RISCV_GOT_HI20
+						case 21: // R_RISCV_TLS_GOT_HI20
+						case 22: // R_RISCV_TLS_GD_HI20
+						case 23: // R_RISCV_PCREL_HI20
+						case 26: // R_RISCV_HI20
+						case 29: // R_RISCV_TPREL_HI20
+							log("Single-symbol section " +
+									elfSectionToLoad.getNameAsString() +
+									" was forcibly aligned to 20 bits to satisfy RISCV HI20 relocation at " +
+									relocationTable.getTableSectionHeader().getNameAsString() +
+									"+0x" + Long.toHexString(relocation.getOffset()));
+							return 1 << 20;
+						default:
+							break;
+					}
+				}
+			}
+		}
+		return relocAlignment;
 	}
 
 	private String pad(int value) {
